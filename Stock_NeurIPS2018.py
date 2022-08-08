@@ -88,6 +88,7 @@ import datetime
 
 # %matplotlib inline
 from finrl.meta.preprocessor.yahoodownloader import YahooDownloader
+from finrl.meta.preprocessor.tusharedownloader import TushareDownloader
 from finrl.meta.preprocessor.preprocessors import FeatureEngineer, data_split
 from finrl.meta.env_stock_trading.env_stocktrading import StockTradingEnv
 from finrl.agents.stablebaselines3.models import DRLAgent
@@ -175,16 +176,15 @@ config.TRAIN_END_DATE
 #%%
 '''
 
-df = YahooDownloader(start_date = '2009-01-01',
-                     end_date = '2021-10-31',
-                     ticker_list = config_tickers.DOW_30_TICKER).fetch_data()
+df = YahooDownloader(start_date = '2013-01-01',
+                     end_date = '2022-07-31',
+                     ticker_list = config_tickers.SSE_50_TICKER, dataset='sse_130101_220731.csv').fetch_data()
 
 
-print(f"config_tickers.DOW_30_TICKER: {config_tickers.DOW_30_TICKER}")
+print(f"config_tickers.DOW_30_TICKER: {config_tickers.SSE_50_TICKER}")
 
 
 print(f"df.shape: {df.shape}")
-
 
 df.sort_values(['date','tic'],ignore_index=True).head()
 
@@ -198,12 +198,14 @@ Data preprocessing is a crucial step for training a high quality machine learnin
 
 fe = FeatureEngineer(
                     use_technical_indicator=True,
-                    tech_indicator_list = config.INDICATORS,
+                    tech_indicator_list=config.INDICATORS,
                     use_vix=True,
                     use_turbulence=True,
-                    user_defined_feature = False)
+                    user_defined_feature=False)
 
 processed = fe.preprocess_data(df)
+# print(processed.head())
+print(processed.tail())
 
 
 list_ticker = processed["tic"].unique().tolist()
@@ -232,8 +234,8 @@ The action space describes the allowed actions that the agent interacts with the
 '''
 
 
-train = data_split(processed_full, '2009-01-01','2020-07-01')
-trade = data_split(processed_full, '2020-07-01','2021-10-31')
+train = data_split(processed_full, '2009-01-01','2021-07-01')
+trade = data_split(processed_full, '2021-07-01','2022-07-31')
 print(f"len(train): {len(train)}")
 print(f"len(trade): {len(trade)}")
 
@@ -252,6 +254,7 @@ print(f"config.INDICATORS: {config.INDICATORS}")
 #%%
 
 stock_dimension = len(train.tic.unique())
+# capital amount, close_values, shares, num_indicators*num_stocks
 state_space = 1 + 2*stock_dimension + len(config.INDICATORS)*stock_dimension
 print(f"Stock Dimension: {stock_dimension}, State Space: {state_space}")
 
@@ -275,7 +278,7 @@ env_kwargs = {
 }
 
 
-e_train_gym = StockTradingEnv(df = train, **env_kwargs)
+e_train_gym = StockTradingEnv(df=train, **env_kwargs)
 
 #%% md
 
@@ -286,6 +289,7 @@ e_train_gym = StockTradingEnv(df = train, **env_kwargs)
 #%%
 
 env_train, _ = e_train_gym.get_sb_env()
+print(f'initial state: {_}')
 print(f"type(env_train): {type(env_train)}")
 
 #%% md
@@ -310,7 +314,7 @@ Model Training: 5 models, A2C DDPG, PPO, TD3, SAC
 
 
 #%%
-
+#
 agent = DRLAgent(env = env_train)
 model_a2c = agent.get_model("a2c")
 
@@ -324,71 +328,71 @@ trained_a2c = agent.train_model(model=model_a2c,
 ### Model 2: DDPG
 
 #%%
-
-agent = DRLAgent(env = env_train)
-model_ddpg = agent.get_model("ddpg")
-
-#%%
-
-trained_ddpg = agent.train_model(model=model_ddpg,
-                             tb_log_name='ddpg',
-                             total_timesteps=50000)
+#
+# agent = DRLAgent(env = env_train)
+# model_ddpg = agent.get_model("ddpg")
+#
+# #%%
+#
+# trained_ddpg = agent.train_model(model=model_ddpg,
+#                              tb_log_name='ddpg',
+#                              total_timesteps=50000)
 
 ### Model 3: PPO
 
 
-agent = DRLAgent(env = env_train)
-PPO_PARAMS = {
-    "n_steps": 2048,
-    "ent_coef": 0.01,
-    "learning_rate": 0.00025,
-    "batch_size": 128,
-}
-model_ppo = agent.get_model("ppo",model_kwargs = PPO_PARAMS)
-
-#%%
-
-trained_ppo = agent.train_model(model=model_ppo,
-                             tb_log_name='ppo',
-                             total_timesteps=50000)
+# agent = DRLAgent(env = env_train)
+# PPO_PARAMS = {
+#     "n_steps": 2048,
+#     "ent_coef": 0.01,
+#     "learning_rate": 0.00025,
+#     "batch_size": 128,
+# }
+# model_ppo = agent.get_model("ppo",model_kwargs = PPO_PARAMS)
+#
+# #%%
+#
+# trained_ppo = agent.train_model(model=model_ppo,
+#                              tb_log_name='ppo',
+#                              total_timesteps=50000)
 
 
 
 ### Model 4: TD3
 
 
-agent = DRLAgent(env = env_train)
-TD3_PARAMS = {"batch_size": 100,
-              "buffer_size": 1000000,
-              "learning_rate": 0.001}
-
-model_td3 = agent.get_model("td3",model_kwargs = TD3_PARAMS)
-
-#%%
-
-trained_td3 = agent.train_model(model=model_td3,
-                             tb_log_name='td3',
-                             total_timesteps=30000)
+# agent = DRLAgent(env = env_train)
+# TD3_PARAMS = {"batch_size": 100,
+#               "buffer_size": 1000000,
+#               "learning_rate": 0.001}
+#
+# model_td3 = agent.get_model("td3",model_kwargs = TD3_PARAMS)
+#
+# #%%
+#
+# trained_td3 = agent.train_model(model=model_td3,
+#                              tb_log_name='td3',
+#                              total_timesteps=30000)
 
 
 ### Model 5: SAC
 
 
-agent = DRLAgent(env = env_train)
-SAC_PARAMS = {
-    "batch_size": 128,
-    "buffer_size": 1000000,
-    "learning_rate": 0.0001,
-    "learning_starts": 100,
-    "ent_coef": "auto_0.1",
-}
-
-model_sac = agent.get_model("sac",model_kwargs = SAC_PARAMS)
-
-
-trained_sac = agent.train_model(model=model_sac,
-                             tb_log_name='sac',
-                             total_timesteps=60000)
+# agent = DRLAgent(env = env_train)
+# SAC_PARAMS = {
+#     "batch_size": 128,
+#     "buffer_size": 1000000,
+#     "learning_rate": 0.0001,
+#     "learning_starts": 100,
+#     "ent_coef": "auto_0.1",
+# }
+#
+# model_sac = agent.get_model("sac",model_kwargs = SAC_PARAMS)
+#
+#
+# trained_sac = agent.train_model(model=model_sac,
+#                              tb_log_name='sac',
+#                              total_timesteps=60000)
 
 
 '''
@@ -436,7 +440,8 @@ print(f"trade.head(): {trade.head()}")
 
 
 df_account_value, df_actions = DRLAgent.DRL_prediction(
-    model=trained_sac,
+    # model=trained_sac,
+    model=trained_a2c,
     environment = e_trade_gym)
 
 

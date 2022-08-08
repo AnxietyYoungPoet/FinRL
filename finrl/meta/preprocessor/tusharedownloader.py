@@ -6,6 +6,23 @@ from __future__ import annotations
 import pandas as pd
 import tushare as ts
 from tqdm import tqdm
+import os.path as osp
+
+from finrl.config import DATA_SAVE_DIR
+
+
+def date_format(date_string):
+    if '-' in date_string:
+        date_string = date_string.replace('-', '')
+    return date_string
+
+
+def fix_tick(tick):
+    if tick.split('.')[-1] == 'XSHG':
+        tick = tick.split('.')[0] + '.SH'
+    if tick.split('.')[-1] == 'XSHE':
+        tick = tick.split('.')[0] + '.SZ'
+    return tick
 
 
 class TushareDownloader:
@@ -39,11 +56,13 @@ class TushareDownloader:
     V_ma20:20 daily average
     """
 
-    def __init__(self, start_date: str, end_date: str, ticker_list: list):
+    def __init__(self, start_date: str, end_date: str, ticker_list: list, dataset=None):
 
-        self.start_date = start_date
-        self.end_date = end_date
+        self.start_date = date_format(start_date)
+        self.end_date = date_format(end_date)
         self.ticker_list = ticker_list
+        self.dataset = dataset
+        # self.pro = ts.pro_api()
 
     def fetch_data(self) -> pd.DataFrame:
         """Fetches data from Yahoo API
@@ -56,42 +75,62 @@ class TushareDownloader:
             for the specified stock ticker
         """
         # Download and save the data in a pandas DataFrame:
+        if self.dataset is not None and osp.exists(osp.join(DATA_SAVE_DIR, self.dataset)):
+            print('dataset already exists! Just load it')
+            file_path = osp.join(DATA_SAVE_DIR, self.dataset)
+            return pd.read_csv(file_path, index_col=0)
         data_df = pd.DataFrame()
+        df_list = []
         for tic in tqdm(self.ticker_list, total=len(self.ticker_list)):
-            temp_df = ts.get_hist_data(
-                tic[0:6], start=self.start_date, end=self.end_date
+            # print(tic, self.start_date, self.end_date)
+            temp_df = ts.pro_bar(
+                ts_code=fix_tick(tic), adj='qfq', start_date=self.start_date, end_date=self.end_date
             )
-            temp_df["tic"] = tic[0:6]
-            data_df = data_df.append(temp_df)
-        data_df = data_df.reset_index(level="date")
+            temp_df["tic"] = fix_tick(tic)
+            df_list.append(temp_df)
+        data_df = pd.concat(df_list, ignore_index=True)
+        # print(data_df.head())
 
         # create day of the week column (monday = 0)
         data_df = data_df.drop(
             [
-                "price_change",
-                "p_change",
-                "ma5",
-                "ma10",
-                "ma20",
-                "v_ma5",
-                "v_ma10",
-                "v_ma20",
+                "pre_close",
+                "change",
+                "pct_chg",
+                "amount",
+                "ts_code"
+                # "ma5",
+                # "ma10",
+                # "ma20",
+                # "v_ma5",
+                # "v_ma10",
+                # "v_ma20",
             ],
             1,
         )
-        data_df["day"] = pd.to_datetime(data_df["date"]).dt.dayofweek
+        data_df["day"] = pd.to_datetime(data_df["trade_date"]).dt.dayofweek
         # rank desc
         data_df = data_df.sort_index(axis=0, ascending=False)
         data_df = data_df.reset_index(drop=True)
         # convert date to standard string format, easy to filter
-        data_df["date"] = pd.to_datetime(data_df["date"])
+        data_df["date"] = pd.to_datetime(data_df["trade_date"])
         data_df["date"] = data_df.date.apply(lambda x: x.strftime("%Y-%m-%d"))
+        data_df = data_df.drop(
+            [
+                "trade_date",
+            ],
+            1,
+        )
         # drop missing data
         data_df = data_df.dropna()
         print("Shape of DataFrame: ", data_df.shape)
         # print("Display DataFrame: ", data_df.head())
         print(data_df)
         data_df = data_df.sort_values(by=["date", "tic"]).reset_index(drop=True)
+
+        if self.dataset is not None:
+            file_path = osp.join(DATA_SAVE_DIR, self.dataset)
+            data_df.to_csv(file_path)
         return data_df
 
     def select_equal_rows_stock(self, df):

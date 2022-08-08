@@ -5,6 +5,17 @@ from __future__ import annotations
 
 import pandas as pd
 import yfinance as yf
+import os.path as osp
+
+from finrl.config import DATA_SAVE_DIR
+
+
+def fix_tick(tick):
+    if tick.split('.')[-1] == 'XSHG':
+        tick = tick.split('.')[0] + '.SS'
+    if tick.split('.')[-1] == 'XSHE':
+        tick = tick.split('.')[0] + '.SZ'
+    return tick
 
 
 class YahooDownloader:
@@ -27,11 +38,12 @@ class YahooDownloader:
 
     """
 
-    def __init__(self, start_date: str, end_date: str, ticker_list: list):
+    def __init__(self, start_date: str, end_date: str, ticker_list: list, dataset=None):
 
         self.start_date = start_date
         self.end_date = end_date
         self.ticker_list = ticker_list
+        self.dataset = dataset
 
     def fetch_data(self, proxy=None) -> pd.DataFrame:
         """Fetches data from Yahoo API
@@ -45,13 +57,19 @@ class YahooDownloader:
             for the specified stock ticker
         """
         # Download and save the data in a pandas DataFrame:
+        if self.dataset is not None and osp.exists(osp.join(DATA_SAVE_DIR, self.dataset)):
+            print('dataset already exists! Just load it')
+            file_path = osp.join(DATA_SAVE_DIR, self.dataset)
+            return pd.read_csv(file_path, index_col=0)
         data_df = pd.DataFrame()
+        df_list = []
         for tic in self.ticker_list:
             temp_df = yf.download(
-                tic, start=self.start_date, end=self.end_date, proxy=proxy
+                fix_tick(tic), start=self.start_date, end=self.end_date, proxy=proxy
             )
-            temp_df["tic"] = tic
-            data_df = data_df.append(temp_df)
+            temp_df["tic"] = fix_tick(tic)
+            df_list.append(temp_df)
+        data_df = pd.concat(df_list)
         # reset the index, we want to use numbers as index instead of dates
         data_df = data_df.reset_index()
         try:
@@ -84,6 +102,9 @@ class YahooDownloader:
 
         data_df = data_df.sort_values(by=["date", "tic"]).reset_index(drop=True)
 
+        if self.dataset is not None:
+            file_path = osp.join(DATA_SAVE_DIR, self.dataset)
+            data_df.to_csv(file_path)
         return data_df
 
     def select_equal_rows_stock(self, df):
